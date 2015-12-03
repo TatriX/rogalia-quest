@@ -1,2 +1,2 @@
-# rogalia-quest
-Point and click quest in Rogalia universe
+# Rogalia Quest
+Point and click quest in the [Rogalia](https://github.com/TatriX/rogalia) universe
