@@ -1,52 +1,30 @@
 (in-package :rogalia-quest)
 
 (require :sdl2)
-(require :cl-opengl)
+(require :sdl2-image)
+
+(defun make-texture (renderer filename)
+  (sdl2:create-texture-from-surface renderer (sdl2-image:load-image filename)))
 
 (defun main ()
-  "The kitchen sink."
-  (sdl2:with-init (:everything)
+  (sdl2:with-init
+      (:everything)
     (format t "Using SDL Library Version: ~D.~D.~D~%"
             sdl2-ffi:+sdl-major-version+
             sdl2-ffi:+sdl-minor-version+
             sdl2-ffi:+sdl-patchlevel+)
     (finish-output)
-
-    (sdl2:with-window (win :flags '(:shown :opengl))
-      (sdl2:with-gl-context (gl-context win)
-        (let ((controllers ())
-              (haptic ()))
-
-          ;; basic window/gl setup
-          (format t "Setting up window/gl.~%")
-          (finish-output)
-          (sdl2:gl-make-current win gl-context)
-          (gl:viewport 0 0 800 600)
-          (gl:matrix-mode :projection)
-          (gl:ortho -2 2 -2 2 -2 2)
-          (gl:matrix-mode :modelview)
-          (gl:load-identity)
-          (gl:clear-color 0.0 0.0 1.0 1.0)
-          (gl:clear :color-buffer)
-
-          (format t "Opening game controllers.~%")
-          (finish-output)
-          ;; open any game controllers
-          (loop for i from 0 upto (- (sdl2:joystick-count) 1)
-             do (when (sdl2:game-controller-p i)
-                  (format t "Found gamecontroller: ~a~%"
-                          (sdl2:game-controller-name-for-index i))
-                  (let* ((gc (sdl2:game-controller-open i))
-                         (joy (sdl2:game-controller-get-joystick gc)))
-                    (setf controllers (acons i gc controllers))
-                    (when (sdl2:joystick-is-haptic-p joy)
-                      (let ((h (sdl2:haptic-open-from-joystick joy)))
-                        (setf haptic (acons i h haptic))
-                        (sdl2:rumble-init h))))))
-
-          ;; main loop
-          (format t "Beginning main loop.~%")
-          (finish-output)
+    (sdl2-image:init '(:png))
+    (sdl2:with-window (win :w 766 :h 720 :flags '(:shown :opengl)) ;:fullscreen-desktop
+      (sdl2:with-renderer (ren win :flags '())
+        (let* ((state 0)
+               (basement-surf (sdl2-image:load-image "assets/basement.png"))
+               (basement-width (sdl2:surface-width basement-surf))
+               (basement-height (sdl2:surface-height basement-surf))
+               (basement (sdl2:create-texture-from-surface ren basement-surf))
+               (hell (make-texture ren "assets/hell.png"))
+               (door (make-texture ren "assets/door.png"))
+               (door-rect (sdl2:make-rect 838 979 436 572)))
           (sdl2:with-event-loop (:method :poll)
             (:keydown
              (:keysym keysym)
@@ -61,47 +39,35 @@
                        sym
                        scancode
                        mod-value)))
-
             (:keyup
              (:keysym keysym)
              (when (sdl2:scancode= (sdl2:scancode-value keysym) :scancode-escape)
                (sdl2:push-event :quit)))
 
+            (:mousebuttonup
+             (:x x :y y)
+             (when (= state 0)
+               (multiple-value-bind (w h) (sdl2:get-window-size win)
+                 (setf x (ceiling (* x (float (/ basement-width w)))))
+                 (setf y (ceiling (* y (float (/ basement-height h)))))
+                 (format t "Mouse button up: (~a ~a)~%" x y)
+                 (when (sdl2:has-intersect door-rect (sdl2:make-rect x y 1 1))
+                   (format t "Intersect! ~%")
+                   (setf state 1)))))
+
             (:mousemotion
              (:x x :y y :xrel xrel :yrel yrel :state state)
              (format t "Mouse motion abs(rel): ~a (~a), ~a (~a)~%Mouse state: ~a~%"
                      x xrel y yrel state))
-
-            (:controlleraxismotion
-             (:which controller-id :axis axis-id :value value)
-             (format t "Controller axis motion: Controller: ~a, Axis: ~a, Value: ~a~%"
-                     controller-id axis-id value))
-
-            (:controllerbuttondown
-             (:which controller-id)
-             (let ((h (cdr (assoc controller-id haptic))))
-               (when h
-                 (sdl2:rumble-play h 1.0 100))))
-
             (:idle
              ()
-             (gl:clear :color-buffer)
-             (gl:begin :triangles)
-             (gl:color 1.0 0.0 0.0)
-             (gl:vertex 0.0 1.0)
-             (gl:vertex -1.0 -1.0)
-             (gl:vertex 1.0 -1.0)
-             (gl:end)
-             (gl:flush)
-             (sdl2:gl-swap-window win))
-
-            (:quit () t))
-
-          (format t "Closing opened game controllers.~%")
-          (finish-output)
-          ;; close any game controllers that were opened
-          ;; as well as any haptics
-          (loop for (i . controller) in controllers
-             do (progn
-                  (sdl2:game-controller-close controller)
-                  (sdl2:haptic-close (cdr (assoc i haptic))))))))))
+             (sdl2:set-render-draw-color ren 0 0 0 255)
+             (sdl2:render-clear ren)
+             (ecase state
+               (0
+                (sdl2:render-copy ren basement)
+                (sdl2:render-copy ren door :dest-rect door-rect))
+               (1
+                (sdl2:render-copy ren hell)))
+             (sdl2:render-present ren))
+            (:quit () t))))))))
